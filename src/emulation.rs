@@ -14,7 +14,31 @@ use std::{
 use tokio::{
     select,
     task::{spawn_local, JoinHandle},
+    process::Command,
 };
+
+fn spawn_claim() {
+    tokio::task::spawn_local(async move {
+        log::info!("Claiming Monitor");
+        let mut child = match Command::new("claim_monitor").spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!("could not claim monitor: {e}");
+                return;
+            }
+        };
+        match child.wait().await {
+            Ok(s) => {
+                if s.success() {
+                    log::info!("CM exited successfully");
+                } else {
+                    log::warn!("CM exited with {s}");
+                }
+            }
+            Err(e) => log::warn!("CM: {e}"),
+        }
+    });
+}
 
 /// emulation handling events received from a listener
 pub(crate) struct Emulation {
@@ -141,6 +165,7 @@ impl ListenTask {
                                     self.event_tx.send(EmulationEvent::ReleaseNotify).expect("channel closed");
                                     self.listener.reply(addr, ProtoEvent::Ack(0)).await;
                                     self.event_tx.send(EmulationEvent::Entered{addr, pos: to_ipc_pos(pos), fingerprint}).expect("channel closed");
+                                    spawn_claim();
                                 }
                             }
                             ProtoEvent::Leave(_) => {
